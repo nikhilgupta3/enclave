@@ -6,8 +6,8 @@ readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = "==3.12.*"
 dependencies = [
-    "ansible-core ==2.21.3",
-    "cachetools ==7.1.8",
+    "ansible-core ==2.21.4",
+    "cachetools ==7.2.0",
     "certifi ==2026.7.22",
     "click ==8.5.0",
     "durationpy ==0.11",
@@ -30,17 +30,17 @@ enclave-cert-gen = "enclave.cert_gen.main:cli"
 
 [dependency-groups]
 dev = [
-    "ansible-lint ==26.8.0",
+    "ansible-lint ==26.9.0",
     "anymarkup ==0.8.1",
     "mypy ==2.3.1",
     "pytest ==9.1.1",
     "pytest-cov ==7.1.0",
     "pytest-mock ==3.15.1",
-    "ruff ==0.16.5",
+    "ruff ==0.16.8",
     "yamllint ==1.38.0",
 ]
 cert-gen = [
-    "certbot ==5.7.0",
+    "certbot ==5.8.0",
     "certbot-dns-hetzner ==4.0.0",
 ]
 

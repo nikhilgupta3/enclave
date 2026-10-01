@@ -16,10 +16,9 @@ source "${ENCLAVE_DIR}/scripts/lib/config.sh"
 source "${ENCLAVE_DIR}/scripts/lib/network.sh"
 source "${ENCLAVE_DIR}/scripts/lib/common.sh"
 
-# Get cluster name from environment or dev-scripts config
+# Get cluster name from environment
 ENCLAVE_CLUSTER_NAME="${ENCLAVE_CLUSTER_NAME:-enclave-test}"
 
-# Try to load dev-scripts config (non-fatal)
 try_load_cluster_env
 
 CLUSTER_NAME="${CLUSTER_NAME:-$ENCLAVE_CLUSTER_NAME}"
@@ -90,6 +89,13 @@ SUSHY_EMULATOR_LIBVIRT_URI = "qemu:///system"
 # Use MAC address as system identifier instead of UUID
 SUSHY_EMULATOR_LIBVIRT_MAC_AS_ID = True
 
+# Upload virtual-media ISOs into the per-cluster libvirt pool. Without this,
+# sushy-tools falls back to a pool named "default", which does not exist on
+# hosts that only have per-cluster pools, causing VirtualMedia.InsertMedia to
+# fail with "Storage pool not found". Using the cluster pool also ensures the
+# ISOs are removed when the cluster (and its pool) is torn down.
+SUSHY_EMULATOR_STORAGE_POOL = "${CLUSTER_NAME}"
+
 # Bind to cluster-specific BMC IP and port for parallel execution isolation
 SUSHY_EMULATOR_LISTEN_IP = "${BMC_GATEWAY}"
 SUSHY_EMULATOR_LISTEN_PORT = ${BMC_PORT}
@@ -129,7 +135,7 @@ sudo podman run -d \
     --name "$CONTAINER_NAME" \
     -v "$SUSHY_DIR:/root/sushy:z" \
     -v "/root/.ssh:/root/.ssh:ro,z" \
-    -v "/var/run/libvirt:/var/run/libvirt:z" \
+    -v "/var/run/libvirt:/var/run/libvirt" \
     "${SUSHY_TOOLS_IMAGE}" \
     sushy-emulator --config /root/sushy/conf.py
 

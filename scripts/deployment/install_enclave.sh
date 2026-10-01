@@ -121,7 +121,7 @@ info "Step 5: Generating Enclave Lab configuration (config/global.yaml, config/c
 # setup_ansible.sh installs uv on the Landing Zone VM; here we ensure the
 # runner also has uv so generate_enclave_vars.sh and generate_ironic_cert.sh
 # can call 'uv run --group cert-gen enclave-cert-gen' without SSH.
-UV_VERSION="0.12.10"
+UV_VERSION="0.12.19"
 current_uv_version=$(uv --version 2>/dev/null | awk '{print $2}' || true)
 if [ "${current_uv_version}" != "${UV_VERSION}" ]; then
     info "Installing uv ${UV_VERSION} locally..."
@@ -297,15 +297,11 @@ fi
 
 # Step 7: Generate SSH key if needed
 info "Step 7: Checking SSH key on Landing Zone..."
-ssh $SSH_OPTS "$LZ_SSH" bash <<'EOSSH'
-if [ ! -f ~/.ssh/id_rsa.pub ]; then
-    echo "  Generating SSH key pair..."
-    ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N "" -q
-else
-    echo "  SSH key already exists"
+if ! SSH_KEY_PATH=$(ensure_lz_ssh_public_key); then
+    error "Failed to find or generate an SSH key on the Landing Zone"
+    exit 1
 fi
-EOSSH
-success "SSH key ready"
+success "SSH key ready: ${SSH_KEY_PATH}"
 
 # Step 8: Display configuration summary
 info "Step 8: Configuration summary..."

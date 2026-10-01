@@ -4,7 +4,7 @@
 # Adds CI-only infrastructure, validation, and image build targets
 
 # CI Configuration (set before include so these defaults take precedence)
-WORKING_DIR ?= /opt/dev-scripts
+WORKING_DIR ?= /opt/clusters
 
 # Cluster name for parallel execution isolation (can be overridden)
 ENCLAVE_CLUSTER_NAME ?= enclave-test
@@ -20,18 +20,18 @@ include Makefile
 
 .PHONY: validate validate-shell validate-yaml validate-json-schema validate-ansible \
         validate-tags validate-templates validate-mirror validate-makefile validate-plugins \
-        validate-migrations validate-python \
+        validate-migrations validate-python validate-osac-values \
         build-ci-image push-ci-image test-ci-image build-push-ci-image \
         deploy-cluster-pre-install-validate \
         deploy-cluster-setup deploy-cluster-validate deploy-cluster-acquire-hardware \
         deploy-cluster-write-migration-tasks \
         environment provision-landing-zone verify-landing-zone \
         install-enclave verify-enclave-installation setup-ceph verify-ceph \
-        verify clean verify-cluster verify-cleanup \
+        verify clean verify-cluster osac-smoke verify-cleanup \
         generate-cluster-name setup-working-dir collect-step-logs \
         preflight-checks collect-artifacts-basic collect-artifacts-deployment \
         collect-artifacts-full ci-flow-connected ci-flow-disconnected \
-	generate-ironic-cert clean-infra reap-stale-vms \
+	generate-ironic-cert clean-infra reap-stale-vms start-stopped-runners \
 
 # Override default help to show both LZ and CI targets
 help:
@@ -58,6 +58,7 @@ help:
 	@echo "  make -f Makefile.ci validate-makefile     - Validate Makefile syntax"
 	@echo "  make -f Makefile.ci validate-plugins      - Validate plugin directory structure"
 	@echo "  make -f Makefile.ci validate-migrations   - Validate migration file timestamps and immutability"
+	@echo "  make -f Makefile.ci validate-osac-values  - Validate OSAC values overlay against pinned chart schema"
 	@echo ""
 	@echo "CI Image targets:"
 	@echo "  make -f Makefile.ci build-ci-image        - Build CI container image locally"
@@ -79,11 +80,13 @@ help:
 	@echo ""
 	@echo "CI Verification targets:"
 	@echo "  make -f Makefile.ci verify-cluster                   - Verify OpenShift cluster deployment"
+	@echo "  make -f Makefile.ci osac-smoke                       - Run OSAC CLI post-install smoke test (connected)"
 	@echo "  make -f Makefile.ci verify-cleanup                   - Verify infrastructure cleanup"
 	@echo ""
 	@echo "CI Helper targets:"
 	@echo "  make -f Makefile.ci clean-infra                      - Tear down infrastructure"
 	@echo "  make -f Makefile.ci reap-stale-vms                   - Reap leaked CI VMs older than REAP_AGE_HOURS (default 12h)"
+	@echo "  make -f Makefile.ci start-stopped-runners            - Start stopped runner services on this host"
 	@echo "  make -f Makefile.ci generate-cluster-name            - Generate unique cluster name"
 	@echo "  make -f Makefile.ci setup-working-dir                - Setup cluster-specific working directory"
 	@echo "  make -f Makefile.ci collect-step-logs                - Collect logs from cluster"
@@ -113,7 +116,7 @@ help:
 	@echo "  make -f Makefile.ci deploy-plugin PLUGIN=<name>      - Deploy a specific plugin"
 	@echo ""
 	@echo "Optional configuration:"
-	@echo "  WORKING_DIR        - Working directory (default: /opt/dev-scripts)"
+	@echo "  WORKING_DIR        - Working directory (default: /opt/clusters)"
 	@echo ""
 	@echo "Current values:"
 	@echo "  WORKING_DIR=$(WORKING_DIR)"
@@ -127,7 +130,6 @@ help:
 	@echo "Example workflow (full deployment):"
 	@echo "  make -f Makefile.ci validate                # Validate code quality"
 	@echo "  export BASE_WORKING_DIR=/opt/clusters"
-	@echo "  export CI_TOKEN=your-token"
 	@echo ""
 	@echo "  make -f Makefile.ci environment                # Step 1: Create infrastructure"
 	@echo "  make -f Makefile.ci provision-landing-zone     # Step 2: Install OS on Landing Zone"
@@ -138,10 +140,9 @@ help:
 	@echo "  make -f Makefile.ci ci-flow-connected          # Runs all steps above automatically"
 	@echo ""
 	@echo "Requirements for CI targets:"
-	@echo "  - git (to clone dev-scripts)"
+	@echo "  - git"
 	@echo "  - libvirt installed and running"
 	@echo "  - Sufficient resources (64GB+ RAM recommended)"
-	@echo "  - CI_TOKEN environment variable set"
 
 # --- Override deploy targets to use SSH-based scripts ---
 
@@ -270,6 +271,9 @@ validate-migrations:
 validate-python:
 	@./scripts/verification/validate.sh python
 
+validate-osac-values:
+	@./scripts/verification/validate.sh osac-values
+
 # --- CI Image targets ---
 
 build-ci-image:
@@ -342,6 +346,10 @@ clean-infra:
 # Reap leaked CI clusters older than REAP_AGE_HOURS (default 12h) across all runs
 reap-stale-vms:
 	@sudo -E python3 ./scripts/infrastructure/vm_infra.py reap
+
+# Start any self-hosted runner services on this host that are stopped
+start-stopped-runners:
+	@./scripts/runners/start-stopped-runners.sh
 
 # --- CI Infrastructure targets ---
 
@@ -468,12 +476,17 @@ verify:
 	@echo "Verifying infrastructure..."
 	@./scripts/verification/verify_infrastructure.sh
 
-# Clean up infrastructure and remove dev-scripts clone
+# Clean up infrastructure
 clean: clean-infra
 
 # Verification targets
 verify-cluster:
 	@ENCLAVE_CLUSTER_NAME=$(ENCLAVE_CLUSTER_NAME) WORKING_DIR=$(WORKING_DIR) ./scripts/verification/verify_cluster.sh
+
+# OSAC CLI post-install smoke test (connected environments only). Exercises the
+# fulfillment API end-to-end through its route via the osac CLI on the LZ.
+osac-smoke:
+	@./scripts/verification/run_osac_smoke.sh
 
 verify-cleanup:
 	@./scripts/cleanup/verify_cleanup.sh

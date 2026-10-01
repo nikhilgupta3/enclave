@@ -75,6 +75,10 @@ class ClusterOperatorsNotReadyError(ClusterUpgradeError):
         )
 
 
+class ClusterVersionQueryError(ClusterUpgradeError):
+    """Raised when querying ClusterVersion resource fails."""
+
+
 def get_current_version() -> str:
     """Return the cluster's current desired version from ClusterVersion."""
     result = run_oc_command([
@@ -170,6 +174,39 @@ def get_available_versions() -> list[str] | None:
     return versions
 
 
+def get_conditional_updates() -> list[str]:
+    """Return the list of versions from conditionalUpdates.
+
+    Returns an empty list if conditionalUpdates is not present or null.
+    """
+    result = run_oc_command([
+        "oc",
+        "get",
+        "clusterversion.config.openshift.io",
+        "version",
+        "-o",
+        "json",
+    ])
+    if result.returncode != 0:
+        raise ClusterVersionQueryError(
+            f"Failed to query ClusterVersion resource (exit {result.returncode})"
+        )
+    try:
+        raw_json = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise ClusterVersionQueryError(
+            "ClusterVersion resource returned invalid JSON"
+        ) from exc
+
+    raw = raw_json.get("status", {}).get("conditionalUpdates")
+    if raw is None:
+        return []
+
+    versions = [update["release"]["version"] for update in raw]
+    logger.debug("Conditional update versions from API: %s", versions)
+    return versions
+
+
 def get_cluster_operators() -> list[dict[str, Any]]:
     """Return all ClusterOperator objects from the cluster."""
     result = run_oc_command([
@@ -224,38 +261,35 @@ def check_cluster_operators_ready() -> tuple[bool, list[str]]:
 
 
 def upgrade_cluster(
-    desired_version: str, timeout_minutes: int = 180, sleep_interval: int = 60
+    desired_version: str,
+    timeout_minutes: int = 180,
+    sleep_interval: int = 60,
+    allow_not_recommended: bool = False,
 ) -> None:
-    """Patch ClusterVersion to trigger an upgrade and wait for it to complete.
+    """Trigger Cluster upgrade and wait for it to complete.
 
     The timeout applies to the entire upgrade operation (both wait phases combined).
     """
-    logger.info("Patching clusterversion to desired_version=%s", desired_version)
+    logger.info("Upgrading cluster to desired_version=%s", desired_version)
 
     # Calculate shared deadline for both wait operations
     deadline = time.time() + (timeout_minutes * 60)
 
-    patch_payload = json.dumps({
-        "spec": {"desiredUpdate": {"version": desired_version}}
-    })
-    result = run_oc_command([
-        "oc",
-        "patch",
-        "clusterversion.config.openshift.io",
-        "version",
-        "--type",
-        "merge",
-        "-p",
-        patch_payload,
-    ])
+    upgrade_command = ["oc", "adm", "upgrade", "--to", desired_version]
+    if allow_not_recommended:
+        upgrade_command += ["--allow-not-recommended"]
+
+    result = run_oc_command(upgrade_command)
     if result.returncode != 0:
-        header = f"oc patch clusterversion to {desired_version} failed (exit {result.returncode})"
+        header = (
+            f"oc adm upgrade to {desired_version} failed (exit {result.returncode})"
+        )
         if result.stderr:
             log_subprocess_output(f"{header} [stderr]", result.stderr, logging.ERROR)
         if result.stdout:
             log_subprocess_output(f"{header} [stdout]", result.stdout, logging.ERROR)
         raise RuntimeError(
-            f"oc patch clusterversion to {desired_version} failed (exit {result.returncode})"
+            f"oc adm upgrade to {desired_version} failed (exit {result.returncode})"
         )
 
     # First wait: desired.version update
@@ -292,6 +326,7 @@ def reconcile(
     dry_run: bool,
     timeout_minutes: int = 180,
     sleep_interval: int = 60,
+    allow_not_recommended: bool = False,
 ) -> None:
     """Validate preconditions and upgrade the cluster to the version set in desired_version.
 
@@ -300,11 +335,12 @@ def reconcile(
     applying the upgrade.
     """
     logger.debug(
-        "reconcile() called with desired_version=%s, dry_run=%s, timeout_minutes=%d, sleep_interval=%d",
+        "reconcile() called with desired_version=%s, dry_run=%s, timeout_minutes=%d, sleep_interval=%d, allow_not_recommended=%s",
         desired_version,
         dry_run,
         timeout_minutes,
         sleep_interval,
+        allow_not_recommended,
     )
 
     # Parse and validate versions at entry point
@@ -341,7 +377,20 @@ def reconcile(
     logger.debug("Checking if desired version %s is in available list", desired_version)
 
     if desired_version not in available_versions:
-        raise VersionNotAvailableError(desired_version, available_versions)
+        if allow_not_recommended:
+            logger.debug("Version not in availableUpdates, checking conditionalUpdates")
+            conditional_versions = get_conditional_updates()
+            if desired_version not in conditional_versions:
+                all_versions = list(available_versions) + [
+                    v for v in conditional_versions if v not in available_versions
+                ]
+                raise VersionNotAvailableError(desired_version, all_versions)
+            logger.info(
+                "Version %s found in conditionalUpdates, proceeding with allow_not_recommended",
+                desired_version,
+            )
+        else:
+            raise VersionNotAvailableError(desired_version, available_versions)
 
     logger.debug("Checking cluster operators readiness...")
     ready, issues = check_cluster_operators_ready()
@@ -354,4 +403,6 @@ def reconcile(
         logger.info("Execution is set to DRY-RUN. Exiting.")
         return
 
-    upgrade_cluster(desired_version, timeout_minutes, sleep_interval)
+    upgrade_cluster(
+        desired_version, timeout_minutes, sleep_interval, allow_not_recommended
+    )

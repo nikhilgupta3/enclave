@@ -18,8 +18,10 @@ on:
         default: '12'
         type: string
   schedule:
-    # Weekly scheduled cleanup - Sunday at 4 AM UTC
-    - cron: '0 4 * * 0'
+    # Hourly scheduled cleanup (standard level: make clean + age-based reap).
+    # Scheduled runs pass no inputs, so cleanup_level defaults to 'standard',
+    # which is safe against in-flight CI runs (deep/full are age-blind).
+    - cron: '0 * * * *'
 
 permissions:
   contents: read
@@ -100,6 +102,23 @@ jobs:
             echo "⚠️ Reap encountered errors (see logs)" >> $GITHUB_STEP_SUMMARY
           fi
 
+      - name: Prune stale CI podman images (age-based)
+        if: always()
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Pruning stale podman images" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          # Every CI build tags quay.io/edge-infrastructure/enclave-lab-ci:<sha>;
+          # nothing prunes old tags, so thousands accumulate (~160 GiB observed).
+          # 'image prune -a' only removes images no container references, so the
+          # in-flight job's :latest is preserved. --filter until= keeps anything
+          # from the last day as an extra guard against a concurrent run. Prune
+          # both the runner's rootless store and root's store; best-effort.
+          echo "### Rootless store (github-runner)" >> $GITHUB_STEP_SUMMARY
+          podman image prune -a -f --filter "until=24h" 2>&1 | tail -3 >> $GITHUB_STEP_SUMMARY || true
+          echo "### Root store" >> $GITHUB_STEP_SUMMARY
+          sudo podman image prune -a -f --filter "until=24h" 2>&1 | tail -3 >> $GITHUB_STEP_SUMMARY || true
+
       - name: Deep cleanup
         if: env.CLEANUP_LEVEL == 'deep' || env.CLEANUP_LEVEL == 'full'
         run: |
@@ -144,7 +163,7 @@ jobs:
 
           # Clean up libvirt pools (if any were created)
           # Match all cluster-specific pools:
-          # - dev-scripts pools: eci-XXXXXXXX, ecd-XXXXXXXX, nc-YYYYMMDD, nd-YYYYMMDD
+          # - vm_infra.py pools: eci-XXXXXXXX, ecd-XXXXXXXX, nc-YYYYMMDD, nd-YYYYMMDD
           # - Landing Zone pools (new): eci-*-lz, ecd-*-lz, nc-*-lz, nd-*-lz
           # - Landing Zone pools (legacy): eci-*_pool, ecd-*_pool, nc-*_pool, nd-*_pool
           for pool in $(sudo virsh pool-list --all --name | grep -E "^(eci-|ecd-|nc-|nd-)([a-f0-9]{8}|[0-9]{8})(-lz|_pool)?$" || true); do
@@ -162,6 +181,20 @@ jobs:
           done
 
           echo "✅ Full cleanup complete" >> $GITHUB_STEP_SUMMARY
+
+      - name: Restart stopped runners on this host
+        if: always()
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Restarting stopped runners on this host" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          # Runners get OOM-killed by dangling VMs; revive any that are down now
+          # that reaping has freed memory. Best-effort, only touches this host.
+          if make -f Makefile.ci start-stopped-runners; then
+            echo "✅ Runner restart pass complete" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Runner restart encountered errors (see logs)" >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Post-cleanup status
         if: always()

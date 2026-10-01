@@ -1,7 +1,7 @@
 #!/bin/bash
 # Provision Landing Zone VM (CentOS Stream 10 or RHEL 10)
 #
-# This script provisions the existing Landing Zone VM (created by dev-scripts)
+# This script provisions the existing Landing Zone VM
 # with a configurable cloud image (CentOS Stream 10 by default, or RHEL 10)
 # and configures it for Enclave Lab deployment.
 
@@ -16,6 +16,7 @@ source "${ENCLAVE_DIR}/scripts/lib/output.sh"
 source "${ENCLAVE_DIR}/scripts/lib/validation.sh"
 source "${ENCLAVE_DIR}/scripts/lib/config.sh"
 source "${ENCLAVE_DIR}/scripts/lib/network.sh"
+source "${ENCLAVE_DIR}/scripts/lib/ssh.sh"
 source "${ENCLAVE_DIR}/scripts/lib/common.sh"
 
 # Validate required environment variables
@@ -40,7 +41,7 @@ OS_VARIANT="${LZ_OS_VARIANT:-centos-stream10}"
 POOL_NAME="${CLUSTER_NAME}"
 POOL_PATH="${WORKING_DIR}/pool"
 
-# Network configuration (from dev-scripts config)
+# Network configuration
 BMC_NETWORK="${PROVISIONING_NETWORK}"
 BMC_NETWORK_NAME="${PROVISIONING_NETWORK_NAME:-bmc}"
 CLUSTER_NETWORK="${EXTERNAL_SUBNET_V4}"
@@ -55,10 +56,9 @@ CLUSTER_NET_PREFIX=$(get_network_prefix "$CLUSTER_NETWORK")
 CLUSTER_IP="${CLUSTER_NET_PREFIX}.2"  # Initial guess, will be updated from DHCP
 
 # SSH key
-SSH_KEY_FILE="$HOME/.ssh/id_rsa.pub"
-if [ ! -f "$SSH_KEY_FILE" ]; then
-    error "SSH public key not found: $SSH_KEY_FILE"
-    error "Please generate SSH key: ssh-keygen -t rsa -b 4096"
+if ! SSH_KEY_FILE=$(find_local_ssh_public_key); then
+    error "SSH public key not found in ~/.ssh (looked for: $SSH_PUBLIC_KEY_CANDIDATES)"
+    error "Please generate an SSH key: ssh-keygen -t ed25519"
     exit 1
 fi
 SSH_PUBLIC_KEY=$(cat "$SSH_KEY_FILE")
@@ -160,10 +160,11 @@ info "✓ cloud-init configuration created"
 
 # Create cloud-init ISO
 info "Creating cloud-init ISO..."
-sudo genisoimage -output "${LZ_WORKING_DIR}/cloud-init.iso" \
+sudo xorrisofs -quiet \
+    -output "${LZ_WORKING_DIR}/cloud-init.iso" \
     -volid cidata -joliet -rock \
     "${LZ_WORKING_DIR}/user-data" \
-    "${LZ_WORKING_DIR}/meta-data" 2>&1 | grep -v "Warning: creating filesystem"
+    "${LZ_WORKING_DIR}/meta-data"
 info "✓ cloud-init ISO created"
 
 # Remove cloud-init files that may contain RHSM credentials
@@ -180,7 +181,6 @@ if sudo virsh list --all | grep -q "$LZ_VM_NAME"; then
 fi
 
 # Find or create storage pool for cluster-specific path
-# dev-scripts may create a pool (possibly named oooq_pool) pointing to our cluster path
 # We'll use whatever pool exists for our path, or create one if needed
 if ! sudo virsh pool-uuid "$POOL_NAME" > /dev/null 2>&1; then
     info "Pool '$POOL_NAME' not found, checking if any pool uses path $POOL_PATH..."

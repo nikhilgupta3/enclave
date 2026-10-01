@@ -2,7 +2,7 @@
 operators:
 
   - name: quay-operator
-    version: 3.15.7
+    version: 3.15.8
     channel: stable-3.15
     init_version: 3.15.0
     namespace: quay-enterprise
@@ -16,7 +16,7 @@ operators:
     connected_auto: true
 
   - name: advanced-cluster-management
-    version: 2.15.6
+    version: 2.15.7
     channel: release-2.15
     init_version: 2.15.0
     namespace: open-cluster-management
@@ -31,7 +31,7 @@ operators:
       - update-service-operator
 
   - name: openshift-gitops-operator
-    version: 1.19.6
+    version: 1.19.7
     channel: gitops-1.19
     init_version: 1.19.2
     namespace: openshift-gitops-operator
@@ -67,7 +67,7 @@ operators:
     global: true
 
   - name: redhat-oadp-operator
-    version: 1.5.7
+    version: 1.5.8
     channel: stable
     init_version: 1.5.5
     namespace: openshift-oadp
