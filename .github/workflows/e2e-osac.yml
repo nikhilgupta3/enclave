@@ -82,7 +82,7 @@ jobs:
       github.event_name != 'pull_request' &&
       needs.resolve-image.result == 'success' &&
       needs.get-latest-chart-version.result == 'success'
-    runs-on: [self-hosted, pr-validation]
+    runs-on: [self-hosted, pr-validation-aws]
     timeout-minutes: 15
     permissions:
       contents: read  # only checks out the repo; no write access needed
@@ -164,8 +164,10 @@ jobs:
     with:
       run-connected: true
       run-disconnected: false
-      enabled-plugins: 'lvms,trust-manager,rhbk,aap,osac'
-      aap-license-file: '/etc/enclave-ci/aap-license.zip'
+      enabled-plugins: 'lvms,trust-manager,rhbk,aap,amq-streams,osac'
+      # Workspace-relative path the deployment job downloads the license to from
+      # the enclave-ci-infra runner-secret-files S3 bucket (see e2e-deployment.yml).
+      aap-license-file: 'aap-license.zip'
       skip-cleanup: ${{ inputs.skip-cleanup || false }}
       send-slack-notification: ${{ inputs.send-slack-notification || false }}
       workflow-display-name: 'E2E OSAC'

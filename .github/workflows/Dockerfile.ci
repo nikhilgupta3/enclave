@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi10/ubi@sha256:223f8b83bcaa1159416724627ff2fadbfd2444653756b0c00d9dae1eacccbfbc
+FROM registry.access.redhat.com/ubi10/ubi@sha256:454c3b22fd9dc97859df5a6bce662da1af5e3cf18313ef034190de3759392add
 
 # Configure DNS
 RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
@@ -13,6 +13,7 @@ RUN dnf install -y \
 RUN dnf install -y --allowerasing \
     ca-certificates \
     curl \
+    jq \
     make \
     openssl \
     shellcheck \
@@ -34,7 +35,7 @@ RUN dnf config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.rep
     dnf clean all
 
 # Install uv (pinned version)
-COPY --from=ghcr.io/astral-sh/uv:0.12.19 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.23 /uv /usr/local/bin/uv
 
 # Set working directory
 WORKDIR /workspace
