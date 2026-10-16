@@ -898,6 +898,14 @@ odfExternalConfig: >-
 **Notes**:
 - Only required when `storage_plugin` is set to `odf`
 - Validated by `plugins/odf/schemas/config.yaml` at CI time
+- The `ceph-external-cluster-details-exporter.py` script ships with the ODF operator
+  (console "Download Script" link, or the `ocs-operator` CSV annotation). When it is not
+  available before the cluster exists, the upstream equivalent is
+  [`create-external-cluster-resources.py`](https://github.com/rook/rook/blob/master/deploy/examples/create-external-cluster-resources.py)
+  in the rook repo. Use the branch matching the rook release bundled in your ODF version
+  (not `master`), as the output schema can differ between releases. See the
+  [provider-export guide](https://rook.io/docs/rook/latest-release/CRDs/Cluster/external-cluster/provider-export/)
+  for usage.
 
 ##### `odfDefaults`
 
@@ -1364,7 +1372,7 @@ control_binaries:
 
 **Available binaries**:
 - `openshift_client`: OpenShift CLI (`oc`)
-- `helm`: Helm CLI (downloaded only when a plugin that uses it is deployed — see notes)
+- `helm`: Helm CLI
 - `mirror_registry`: Mirror registry installer
 - `oc_mirror`: oc-mirror tool for image mirroring
 
@@ -1372,16 +1380,10 @@ control_binaries:
 - Checksums are verified after download
 - URLs should point to official Red Hat sources
 - Update version numbers as needed
-- The Helm CLI is only downloaded when a plugin that declares a `helm:` block is used.
-  All control binaries are downloaded from a single task: during the prepare phase for
-  day-0, and by the deploy-plugin playbook for day-2 (the downloads are idempotent and
-  checksum-validated, so re-running them is a no-op). Helm is fetched only when an
-  enabled plugin (day-0) or the plugin being deployed (day-2) uses it. Its URL and
-  checksum are still defined here and used for that download.
 
 ### RHCOS ISOs
 
-RHCOS ISOs are automatically extracted from OpenShift release images during the prepare phase. For each version defined in `defaults/platforms.yaml`, the system:
+In disconnected deployments, RHCOS ISOs are automatically extracted from OpenShift release images during the prepare phase. (Connected deployments skip this step — the Assisted Installer pulls RHCOS from its default sources.) For each version defined in `defaults/platforms.yaml`, the system:
 
 1. Queries the release image for the `machine-os-images` component
 2. Extracts the ISO from the machine-os-images container

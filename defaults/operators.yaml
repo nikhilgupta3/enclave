@@ -8,29 +8,17 @@ operators:
     namespace: quay-enterprise
 
   - name: multicluster-engine
-    version: 2.10.7
-    channel: stable-2.10
-    init_version: 2.10.0
+    version: 2.17.3
+    channel: stable-2.17
+    init_version: 2.17.3
     namespace: multicluster-engine
     seed: true
     connected_auto: true
 
-  # RHACM Hub Backup and Restore SoT namespace. ACM backup is enabled
-  # by enclave, so set as seed.
-  - name: redhat-oadp-operator
-    version: 1.5.8
-    channel: stable
-    init_version: 1.5.5
-    namespace: open-cluster-management-backup
-    seed: true
-    connected_auto: true
-    csvNames:
-      - oadp-operator
-
   - name: advanced-cluster-management
-    version: 2.15.8
-    channel: release-2.15
-    init_version: 2.15.0
+    version: 2.17.3
+    channel: release-2.17
+    init_version: 2.17.3
     namespace: open-cluster-management
     seed: true
 
@@ -72,11 +60,19 @@ operators:
     namespace: openshift-logging
 
   - name: loki-operator
-    version: 6.4.6
+    version: 6.4.7
     channel: stable-6.4
     init_version: 6.4.2
     namespace: openshift-operators-redhat
     global: true
+
+  - name: redhat-oadp-operator
+    version: 1.5.8
+    channel: stable
+    init_version: 1.5.5
+    namespace: openshift-oadp
+    csvNames:
+      - oadp-operator
 
   - name: openshift-cert-manager-operator
     version: 1.18.1
