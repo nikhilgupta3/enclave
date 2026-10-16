@@ -48,61 +48,12 @@ Each Enclave tarball release includes:
     ./sync.sh
     ```
 
-    #### OADP InstallPlan approval during sync (required when ACM backup is in use)
-
-    Early in `./sync.sh`, Enclave reconfigures MultiClusterHub with a Manual
-    `oadp-subscription-spec` for disconnected environments. When the ACM
-    `cluster-backup` component is enabled, MultiClusterHub creates the
-    subscription `redhat-oadp-operator-subscription` in namespace
-    `open-cluster-management-backup`. OLM then creates an InstallPlan that
-    stays in `RequiresApproval` until an operator reviews and approves it.
-
-    If that InstallPlan is left unapproved, sync stalls indefinitely on
-    **Wait until RHACM MultiClusterHub is ready** (MultiClusterHub never
-    reaches `Running`).
-
-    **Before or during the "Configure MultiClusterHub" step of `./sync.sh`**,
-    review and approve any pending OADP InstallPlan:
-
-    1. Set `KUBECONFIG` to the management cluster kubeconfig (typically
-       `$WORKING_DIR/ocp-cluster/auth/kubeconfig`).
-    2. List InstallPlans in the ACM backup namespace:
-
-       ```sh
-       oc get installplan -n open-cluster-management-backup
-       ```
-
-       A pending plan shows `APPROVED` as `false` and/or phase
-       `RequiresApproval`. The CSV name typically includes `oadp-operator`
-       (for example `oadp-operator.v1.5.5`).
-    3. Inspect the plan (CSV versions and related resources) before approving:
-
-       ```sh
-       oc describe installplan <installplan-name> -n open-cluster-management-backup
-       ```
-    4. Approve the InstallPlan after review:
-
-       ```sh
-       oc patch installplan <installplan-name> \
-         -n open-cluster-management-backup \
-         --type merge \
-         -p '{"spec":{"approved":true}}'
-       ```
-
-       Alternatively, in the OpenShift Web Console: **Operators → Installed
-       Operators** (project `open-cluster-management-backup`) → open the
-       pending InstallPlan → **Approve**.
-    5. Confirm MultiClusterHub recovers:
-
-       ```sh
-       oc get multiclusterhub -n open-cluster-management
-       ```
-
-       Wait until `STATUS` / phase is `Running`. If `./sync.sh` was still
-       retrying, it should continue; otherwise re-run `./sync.sh`.
-
-    If the namespace `open-cluster-management-backup` does not exist, ACM
-    cluster-backup is not active and this approval step does not apply.
+    **OADP InstallPlan during sync**: When MultiClusterHub uses Manual
+    `oadp-subscription-spec`, ACM may leave an OADP InstallPlan in
+    `RequiresApproval` in `open-cluster-management-backup`. Before or during
+    sync, review and approve it (`oc get installplan -n open-cluster-management-backup`,
+    then `oc patch installplan <name> -n open-cluster-management-backup --type merge -p '{"spec":{"approved":true}}'`),
+    or sync stalls on "Wait until RHACM MultiClusterHub is ready".
 
 7. **Execute upgrade script** - Run the upgrade automation to apply configuration migrations, upgrade Landing Zone components (Metal3 stack), then upgrade the management cluster and operators to the versions pinned in the tarball. This executes the `playbooks/upgrade.yaml` playbook, which runs migrations, Metal3 component upgrades, followed by `enclave reconcile mgmt-cluster-version --use-defaults` and `enclave reconcile operator-versions --use-defaults`:
 
