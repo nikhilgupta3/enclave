@@ -53,13 +53,55 @@
   register: r_mch
   until: r_mch is succeeded
 
+# When oadp-subscription-spec uses Manual approval, the MultiClusterHub
+# cluster-backup component creates redhat-oadp-operator-subscription in
+# open-cluster-management-backup and leaves InstallPlans in RequiresApproval.
+# Approve those plans on each readiness poll so MCH can reach Running
+# (e.g. during ./sync.sh) without a separate pre-wait that stalls when
+# cluster-backup is disabled.
 - name: Wait until RHACM MultiClusterHub is ready
-  kubernetes.core.k8s_info:
-    api_version: operator.open-cluster-management.io/v1
-    kind: MultiClusterHub
-    name: multiclusterhub
-    namespace: open-cluster-management
-  register: r_mch_status
+  vars:
+    _oadp_backup_namespace: open-cluster-management-backup
+    _oadp_manual: "{{ (oadp_subscription_spec.installPlanApproval | default('Manual')) == 'Manual' }}"
+  block:
+    - name: Approve pending Manual OADP InstallPlans from MultiClusterHub
+      when: _oadp_manual | bool
+      block:
+        - name: List InstallPlans in open-cluster-management-backup
+          kubernetes.core.k8s_info:
+            api_version: operators.coreos.com/v1alpha1
+            kind: InstallPlan
+            namespace: "{{ _oadp_backup_namespace }}"
+          register: r_oadp_ips
+          failed_when: false
+
+        - name: Approve OADP InstallPlans requiring approval
+          when:
+            - item.status.phase | default('') == 'RequiresApproval'
+            - >-
+              item.spec.clusterServiceVersionNames | default([])
+              | select('search', 'oadp-operator') | list | length > 0
+          kubernetes.core.k8s:
+            state: patched
+            api_version: operators.coreos.com/v1alpha1
+            kind: InstallPlan
+            name: "{{ item.metadata.name }}"
+            namespace: "{{ _oadp_backup_namespace }}"
+            merge_type: merge
+            definition:
+              spec:
+                approved: true
+          loop: "{{ r_oadp_ips.resources | default([]) }}"
+          loop_control:
+            label: "{{ item.metadata.name | default('unknown') }}"
+
+    - name: Check MultiClusterHub status
+      kubernetes.core.k8s_info:
+        api_version: operator.open-cluster-management.io/v1
+        kind: MultiClusterHub
+        name: multiclusterhub
+        namespace: open-cluster-management
+      register: r_mch_status
   retries: 120
   delay: 30
   until:
